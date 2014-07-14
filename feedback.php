@@ -1,7 +1,7 @@
 <html>
    <head>
         <meta charset="utf-8">
-        <title>Outline Creator</title>
+        <title>Tree Builder</title>
         <style>
            .title {
               font-family:arial;
