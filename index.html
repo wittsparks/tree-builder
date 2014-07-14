@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+   <head>
+         <meta name="description" content="Builds a dynamic tree view from CSV data">
+        <meta charset="utf-8">
+        <title>Outline Creator</title>
+        <!-- 2 load the theme CSS file -->
+        <link rel="stylesheet" href="/jstree-master/dist/themes/default/style.min.css" />
+        <style>
+           .title {
+              font-family:arial;
+              color:darkblue;
+              font-size:20px;
+           }
+        </style>
+   </head>
+   
+   <body>
+       <script src="/jstree-master/dist/libs/jquery.js"></script>
+       <!-- 5 include the minified jstree source -->
+       <script src="/jstree-master/dist/jstree.min.js"></script>
+       <div id="title_div" style="width:800px">
+          <span class="title">Tree Builder</span> 
+          <span style="font-family:arial;font-size:16px;float:right">Create an interactive tree from a spreadsheet</span>
+       </div>
+       <div id="help_div">
+          <p style="font-family:arial; font-size:12px">
+          Paste your data as comma separated values in the text area below and hit go. <a href="#" onclick="show_example()">Show an example.</a>
+          </p>
+       </div>
+       <div id="csv_div" style="width:800px">
+         <textarea id="csv_data" rows="10" cols="103"></textarea>
+       </div>
+       <button type="button" onclick="go()">Build the tree</button> 
+       <button type="button" onclick="reset()">Clear</button> 
+       <div id="results_div" style="margin:10px; display:none">
+          <span class="title">The Tree</span>
+       <div id="tree_div"></div> 
+       <button id="expand_button" type="button" onclick="expand_collapse();">Expand All</button>
+       <div id="debug_div"></div>
+       </div>
+       <div id="feedback_form" style="font-family:arial; font-size:12px; width:800px; margin:10px; text-align:center">
+          <br/><br/><hr/>
+          <p>Found this site but it doesn't do what you wanted? Let me know and I might add it!</p>
+          <form name='feedback' action='feedback.php' method='post'>
+             Email: <input type='text' size="30" name='email'><br/><br/>
+             Comment:<br/><textarea name='comment' rows='10' cols='40'></textarea>
+             <br/>
+             <input type='submit' value='Submit'>
+          </form>
+       <script>
+         function reset() {
+            $('#csv_data').val('');
+            $('#results_div').hide();
+            $('#tree_div').jstree('destroy').empty();
+         }
+
+         function show_example() {
+            $("#csv_data").val("Primates,Prosimians,Lemurs\nPrimates,Prosimians,Lorises\nPrimates,Prosimians,Tarsiers\nPrimates,Anthropoids,Platyrrhini\nPrimates,Anthropoids,Catarrhini,Cercopithecoidea\nPrimates,Anthropoids,Catarrhini,Hominoidea\nInsects");
+            go();
+         }
+
+         function expand_collapse() {
+            if ($('#expand_button').html() == "Expand All") {
+               $('#tree_div').jstree('open_all');
+               $('#expand_button').html("Collapse All");
+            } else {
+               $('#tree_div').jstree('close_all');
+               $('#expand_button').html("Expand All");
+            }
+         }
+
+         function go() {
+            //first clear any previous tree
+            $('#tree_div').jstree('destroy').empty();
+            $('#expand_button').html("Expand All");
+
+            // Show the results div
+            $('#results_div').show();
+
+            // Translate CSV data to JSON
+            var csv_data = $('#csv_data').val();
+
+            var matrix = [];
+            var lines = csv_data.split("\n");
+            $.each(lines, function(index, line) {
+               if (line.length == 0) return;
+               // Each column in the input csv file is a single level of the tree, and every
+               // row defines a fully specifed path all the way to the leaf node.               
+               // So we need to transform the CSV into a 2-dimensional array.
+               
+               var elems = line.split(",");
+               matrix.push(elems);
+            });
+
+            // Add indexes to the 2d array. We will end up with a 2d array where each cell contains
+            // an object containing the text of the node and the id of the node.
+            
+            var id_counter = 0;
+            var matrix_with_ids = []
+            $.each(matrix, function(row_num, line) {
+               matrix_with_ids.push([])
+               $.each(line, function(column_num, elem) {
+                  var elem_obj = {
+                     text: "",
+                     id: 0,
+                     toString: function() {
+                        return this.text + " {" + this.id + "}";
+                     }
+                  };
+                  elem_obj.text = elem;
+
+                  // See if we've already seen this node and if so use the id we already assigned
+                  existing_id = find_id(elem_obj.text, column_num);
+                  if (existing_id == -1) {
+                     // No id exists for this row. Create one.
+                     elem_obj.id = id_counter++;
+                  } else {
+                     elem_obj.id = existing_id;
+                  }   
+                  matrix_with_ids[row_num].push(elem_obj);
+               });
+            });
+
+            //print_array(matrix_with_ids);
+
+            // Now turn the 2d array into the appropriate javascript for jstree
+            var row;
+            var json_lines = []
+            var ids_added = [];
+            $.each(matrix_with_ids, function(row_num, row) {
+               // this adds all of the root nodes
+               if (ids_added.indexOf(row[0].id) == -1) { //add this index
+                  var json_line = {
+                     id: row[0].id,
+                     parent: "#",
+                     text: row[0].text
+                  };
+                  json_lines.push(json_line);
+                  ids_added.push(row[0].id);
+               } 
+            });
+
+            // Now add the child nodes
+            $.each(matrix_with_ids, function(row_num, row) {
+               $.each(row, function(column_num, elem) {
+                  if (ids_added.indexOf(elem.id) == -1) { //add this index
+                     var json_line = {
+                        id: elem.id,
+                        parent: row[column_num-1].id,
+                        text: elem.text
+                     };
+                     json_lines.push(json_line);
+                     ids_added.push(elem.id);
+                  } 
+               });
+            });
+
+//            $("#debug_div").append(JSON.stringify(json_lines));
+
+            $('#tree_div').jstree({ 'core' : {
+               'data' : json_lines
+            } });
+/*
+            $("#debug_div").html("");
+            $.each(json_lines, function(index, line) {
+               $("#debug_div").append(JSON.stringify(line, undefined, 2) + "<br/>");
+            });
+*/
+            // This function tries to find the given node name (node_name) within the given column
+            // (column) of the matrix_with_ids array. Returns -1 if not found
+            function find_id(node_name, column) {
+               var found_id = -1;
+               $.each(matrix_with_ids, function(row_number, row) {
+                  if (column >= row.length) return;
+                  if (row[column].text == node_name) {
+                     found_id = row[column].id;
+                  }
+               });
+               return found_id; 
+            }
+
+            // Print out a 2-d array for debugging
+            function print_array(an_array) {
+               var theHTML = "<table>";
+               $.each(an_array, function(row_num, row) {
+                  theHTML = theHTML + "<tr>";
+                  $.each(row, function(col_num, elem) {
+                     theHTML = theHTML + "<td>" + elem.toString() + "</td>";
+                  });
+                  theHTML = theHTML + "</tr>";
+               });
+               theHTML = theHTML + "</table>";
+               $("#debug_div").append(theHTML);
+            }
+
+         }
+      </script>
+
+      <!-- Google Analytics -->      
+      <script>
+           (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+             (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+               m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+                 })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+                   ga('create', 'UA-52784493-1', 'auto');
+                     ga('send', 'pageview');
+
+      </script>
+   </body>
+</html> 
+
